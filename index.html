@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Burrito Spress - Emisor GPS</title>
+    <title>Burrito Spress en Vivo - UNMSM</title>
     <!-- Leaflet CSS -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <!-- Supabase JS Client -->
@@ -11,88 +11,82 @@
     <style>
         body {
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-            background-color: #f4f4f9;
             margin: 0;
-            padding: 10px;
-            color: #333;
+            padding: 0;
+            background-color: #f4f4f9;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
         }
-        .container {
-            max-width: 600px;
-            margin: 0 auto;
-            background: #fff;
-            padding: 15px;
-            border-radius: 12px;
-            box-shadow: 0 4px 10px rgba(0,0,0,0.1);
+        header {
+            background-color: #8b0000;
+            color: white;
+            padding: 12px 16px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+            z-index: 1000;
         }
-        h2 {
-            font-size: 1.2rem;
-            margin-top: 0;
-            color: #8b0000;
+        header h1 {
+            margin: 0;
+            font-size: 1.1rem;
+        }
+        .badge {
+            background-color: #2e7d32;
+            padding: 4px 10px;
+            border-radius: 20px;
+            font-size: 0.8rem;
+            font-weight: bold;
+            text-align: center;
+        }
+        .badge.offline {
+            background-color: #c62828;
         }
         #map {
-            height: 320px;
-            width: 100%;
-            border-radius: 8px;
-            margin-bottom: 15px;
-            border: 1px solid #ccc;
-        }
-        .panel {
-            background: #fdfdfd;
-            border: 1px solid #e1e1e1;
-            padding: 12px;
-            border-radius: 8px;
-            margin-bottom: 15px;
-        }
-        .panel p {
-            margin: 6px 0;
-            font-size: 0.95rem;
-            font-weight: 500;
-        }
-        .btn-group {
-            display: flex;
-            gap: 10px;
-            margin-bottom: 10px;
-        }
-        button {
             flex: 1;
-            padding: 10px;
-            font-size: 0.95rem;
-            font-weight: bold;
-            border: none;
-            border-radius: 6px;
-            cursor: pointer;
-            color: white;
+            width: 100%;
         }
-        #btn-start { background-color: #2e7d32; }
-        #btn-stop { background-color: #c62828; }
-        #btn-download { background-color: #1565c0; width: 100%; }
-        button:active { opacity: 0.8; }
+        .info-bar {
+            background: white;
+            padding: 12px 16px;
+            border-top: 1px solid #ddd;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 0.9rem;
+            color: #333;
+        }
+        .btn-centrar {
+            background-color: #8b0000;
+            color: white;
+            border: none;
+            padding: 8px 12px;
+            border-radius: 6px;
+            font-weight: bold;
+            cursor: pointer;
+            font-size: 0.85rem;
+        }
+        .btn-centrar:active {
+            opacity: 0.8;
+        }
     </style>
 </head>
 <body>
 
-<div class="container">
-    <h2>🚌 Burrito Spress</h2>
-    
-    <!-- Contenedor del Mapa -->
-    <div id="map"></div>
+<header>
+    <h1>🚌 Burrito Spress - UNMSM</h1>
+    <span id="estado-conexion" class="badge">Conectando...</span>
+</header>
 
-    <!-- Panel de Datos de Telemetría -->
-    <div class="panel">
-        <p id="estado">Estado: Esperando inicio...</p>
-        <p id="lat">Latitud: --</p>
-        <p id="lng">Longitud: --</p>
-        <p id="vel">Velocidad: 0 km/h</p>
-        <p id="puntos">Puntos capturados: 0</p>
-    </div>
+<div id="map"></div>
 
-    <!-- Botones de Control -->
-    <div class="btn-group">
-        <button id="btn-start" onclick="iniciarGPS()">▶ Iniciar GPS</button>
-        <button id="btn-stop" onclick="detenerGPS()">⏹ Detener</button>
+<div class="info-bar">
+    <div>
+        <div><strong>Unidad:</strong> Bus-01 (Interno)</div>
+        <div id="detalle-telemetria">Esperando señal satelital...</div>
     </div>
-    
-    <button id="btn-download" onclick="descargarCSV()">📥 Descargar Dataset (CSV)</button>
+    <button class="btn-centrar" onclick="centrarEnBus()">🎯 Ubicar Bus</button>
 </div>
 
 <!-- Leaflet JS -->
@@ -102,150 +96,122 @@
     const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJnbGJoZHRibW5odGR2amdzanl5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTQ1NDM0NDIsImV4cCI6MjExMDExOTQ0Mn0.YDmtab0QnCOzitMYzvJABnhIRFVb9_zlaLtjTG00uE4';
     const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-    let watchId = null;
-    let dataset = [];
-    let map, marker;
-    let ultimaLat = null;
-    let ultimaLng = null;
+    const coordsIniciales = [-12.0553, -77.0847];
+    const map = L.map('map').setView(coordsIniciales, 16);
 
-    function inicializarMapa() {
-        map = L.map('map').setView([-12.0553, -77.0847], 16);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        maxZoom: 19,
+        attribution: '&copy; OpenStreetMap contributors'
+    }).addTo(map);
 
-        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-            maxZoom: 19,
-            attribution: '&copy; OpenStreetMap contributors'
-        }).addTo(map);
+    const iconoBus = L.divIcon({
+        html: '<div style="font-size: 30px; line-height: 1; filter: drop-shadow(0 2px 3px rgba(0,0,0,0.4));">🚌</div>',
+        iconSize: [32, 32],
+        iconAnchor: [16, 16],
+        className: ''
+    });
 
-        marker = L.marker([-12.0553, -77.0847]).addTo(map)
-            .bindPopup("Unidad en prueba")
-            .openPopup();
-    }
+    let marker = L.marker(coordsIniciales, { icon: iconoBus });
+    let estelaRuta = L.polyline([], { color: '#8b0000', weight: 4, opacity: 0.7 }).addTo(map);
+    let ultimaCoordenada = null;
+    let primerCarga = true;
+    let busActivo = false;
 
-    inicializarMapa();
-
-    function iniciarGPS() {
-        if (!navigator.geolocation) {
-            alert("Tu navegador no soporta geolocalización.");
-            return;
-        }
-
-        document.getElementById("estado").innerText = "Estado: Buscando ubicación...";
-
-        navigator.geolocation.getCurrentPosition(
-            (pos) => {
-                procesarCoordenada(
-                    pos.coords.latitude,
-                    pos.coords.longitude,
-                    parseFloat(((pos.coords.speed || 0) * 3.6).toFixed(1))
-                );
-            },
-            (err) => {
-                document.getElementById("estado").innerText = "Estado: Error GPS (" + err.code + ": " + err.message + ")";
-            },
-            { enableHighAccuracy: false, timeout: 15000, maximumAge: 10000 }
-        );
-
-        watchId = navigator.geolocation.watchPosition(
-            (pos) => {
-                procesarCoordenada(
-                    pos.coords.latitude,
-                    pos.coords.longitude,
-                    parseFloat(((pos.coords.speed || 0) * 3.6).toFixed(1))
-                );
-            },
-            (err) => {
-                document.getElementById("estado").innerText = "Estado: Error GPS (" + err.code + ": " + err.message + ")";
-            },
-            { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 }
-        );
-    }
-
-    async function procesarCoordenada(lat, lng, velocidadKmh) {
-        let timestamp = new Date().toISOString();
-        ultimaLat = lat;
-        ultimaLng = lng;
-
-        document.getElementById("lat").innerText = "Latitud: " + lat.toFixed(6);
-        document.getElementById("lng").innerText = "Longitud: " + lng.toFixed(6);
-        document.getElementById("vel").innerText = "Velocidad: " + velocidadKmh + " km/h";
-
-        let nuevaPosicion = [lat, lng];
-        marker.setLatLng(nuevaPosicion);
-        map.setView(nuevaPosicion, 17);
-
-        dataset.push({
-            timestamp: timestamp,
-            latitud: lat,
-            longitud: lng,
-            velocidad: velocidadKmh
-        });
-
-        document.getElementById("puntos").innerText = "Puntos capturados: " + dataset.length;
+    async function actualizarMapa() {
+        const badge = document.getElementById("estado-conexion");
+        const detalle = document.getElementById("detalle-telemetria");
 
         try {
-            const { error } = await supabaseClient
+            const { data, error } = await supabaseClient
                 .from('telemetria_buses')
-                .insert([{
-                    unidad: 'Bus-01',
-                    latitud: lat,
-                    longitud: lng,
-                    velocidad_kmh: velocidadKmh
-                }]);
+                .select('*')
+                .eq('unidad', 'Bus-01')
+                .order('created_at', { ascending: false })
+                .limit(1);
 
             if (error) {
-                document.getElementById("estado").innerText = "Estado: Error Supabase ❌ -> " + error.message;
+                badge.innerText = "Error de red";
+                badge.className = "badge offline";
+                return;
+            }
+
+            if (!data || data.length === 0) {
+                badge.innerText = "Sin señal";
+                badge.className = "badge offline";
+                detalle.innerText = "El bus aún no inicia recorrido.";
+                ocultarBus();
+                return;
+            }
+
+            const bus = data[0];
+            const nuevaPos = [bus.latitud, bus.longitud];
+            const detenidoManualmente = bus.velocidad_kmh < 0;
+            const velocidad = detenidoManualmente ? 0 : (bus.velocidad_kmh || 0);
+            
+            const horaReporte = new Date(bus.created_at).toLocaleTimeString([], { 
+                hour: '2-digit', 
+                minute: '2-digit', 
+                second: '2-digit' 
+            });
+
+            const diferenciaSegundos = (new Date() - new Date(bus.created_at)) / 1000;
+
+            // Se oculta al presionar Detener o tras 10 minutos (600 segundos) sin señal
+            if (detenidoManualmente || diferenciaSegundos > 600) {
+                ocultarBus();
+                badge.innerText = "Última vez: " + horaReporte;
+                badge.className = "badge offline";
+                detalle.innerText = `Unidad fuera de servicio • Última vez: ${horaReporte}`;
             } else {
-                document.getElementById("estado").innerText = "Estado: Transmitiendo a Supabase 🟢";
+                busActivo = true;
+                if (!map.hasLayer(marker)) {
+                    marker.addTo(map);
+                }
+
+                badge.innerText = "EN VIVO 🟢";
+                badge.className = "badge";
+                marker.setLatLng(nuevaPos);
+                marker.setPopupContent(`<strong>Bus-01</strong><br>Velocidad: ${velocidad} km/h<br>Actualizado: ${horaReporte}`);
+                detalle.innerText = `Velocidad: ${velocidad} km/h • Actualizado: ${horaReporte}`;
+
+                if (!ultimaCoordenada || ultimaCoordenada[0] !== nuevaPos[0] || ultimaCoordenada[1] !== nuevaPos[1]) {
+                    estelaRuta.addLatLng(nuevaPos);
+                    ultimaCoordenada = nuevaPos;
+                }
+
+                if (primerCarga) {
+                    map.setView(nuevaPos, 17);
+                    primerCarga = false;
+                }
             }
+
         } catch (err) {
-            document.getElementById("estado").innerText = "Estado: Error de red ❌ -> " + err.message;
+            badge.innerText = "Sin conexión";
+            badge.className = "badge offline";
         }
     }
 
-    async function detenerGPS() {
-        if (watchId !== null) {
-            navigator.geolocation.clearWatch(watchId);
-            watchId = null;
+    function ocultarBus() {
+        busActivo = false;
+        ultimaCoordenada = null;
+        primerCarga = true;
+        if (map.hasLayer(marker)) {
+            map.removeLayer(marker);
         }
-        document.getElementById("estado").innerText = "Estado: Rastreo detenido ⏹";
+        estelaRuta.setLatLngs([]);
+    }
 
-        // Enviar señal de cierre en la última ubicación real para quitar el "EN VIVO" del mapa público
-        if (ultimaLat !== null && ultimaLng !== null) {
-            try {
-                await supabaseClient
-                    .from('telemetria_buses')
-                    .insert([{
-                        unidad: 'Bus-01',
-                        latitud: ultimaLat,
-                        longitud: ultimaLng,
-                        velocidad_kmh: -1
-                    }]);
-            } catch (err) {
-                console.error("No se pudo enviar señal de detención:", err);
-            }
+    function centrarEnBus() {
+        if (busActivo && ultimaCoordenada) {
+            map.setView(ultimaCoordenada, 17);
+            marker.openPopup();
+        } else {
+            map.setView(coordsIniciales, 16);
         }
     }
 
-    function descargarCSV() {
-        if (dataset.length === 0) {
-            alert("No hay datos capturados todavía.");
-            return;
-        }
-
-        let csvContent = "data:text/csv;charset=utf-8,timestamp,latitud,longitud,velocidad_kmh\n";
-        
-        dataset.forEach(function(row) {
-            csvContent += `${row.timestamp},${row.latitud},${row.longitud},${row.velocidad}\n`;
-        });
-
-        let encodedUri = encodeURI(csvContent);
-        let link = document.createElement("a");
-        link.setAttribute("href", encodedUri);
-        link.setAttribute("download", "dataset_burrito_unmsm.csv");
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-    }
+    setInterval(actualizarMapa, 3000);
+    actualizarMapa();
 </script>
 
 </body>
