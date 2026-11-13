@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Burrito Spress en Vivo - UNMSM</title>
+    <!-- Leaflet CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <!-- Supabase JS Client -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            background-color: #f4f4f9;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+        }
+        header {
+            background-color: #8b0000; /* Rojo San Marcos */
+            color: white;
+            padding: 12px 16px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+            z-index: 1000;
+        }
+        header h1 {
+            margin: 0;
+            font-size: 1.1rem;
+        }
+        .badge {
+            background-color: #2e7d32;
+            padding: 4px 10px;
+            border-radius: 20px;
+            font-size: 0.8rem;
+            font-weight: bold;
+        }
+        .badge.offline {
+            background-color: #c62828;
+        }
+        #map {
+            flex: 1;
+            width: 100%;
+        }
+        .info-bar {
+            background: white;
+            padding: 12px 16px;
+            border-top: 1px solid #ddd;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 0.9rem;
+            color: #333;
+        }
+        .btn-centrar {
+            background-color: #8b0000;
+            color: white;
+            border: none;
+            padding: 8px 12px;
+            border-radius: 6px;
+            font-weight: bold;
+            cursor: pointer;
+            font-size: 0.85rem;
+        }
+        .btn-centrar:active {
+            opacity: 0.8;
+        }
+    </style>
+</head>
+<body>
+
+<header>
+    <h1>🚌 Burrito Spress - UNMSM</h1>
+    <span id="estado-conexion" class="badge">Conectando...</span>
+</header>
+
+<div id="map"></div>
+
+<div class="info-bar">
+    <div>
+        <div><strong>Unidad:</strong> Bus-01 (Interno)</div>
+        <div id="detalle-telemetria">Esperando señal satelital...</div>
+    </div>
+    <button class="btn-centrar" onclick="centrarEnBus()">🎯 Ubicar Bus</button>
+</div>
+
+<!-- Leaflet JS -->
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+    // 1. Conexión a tu proyecto activo de Supabase
+    const SUPABASE_URL = 'https://rglbhdtbmnhtdvjgsjyy.supabase.co';
+    const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJnbGJoZHRibW5odGR2amdzanl5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTQ1NDM0NDIsImV4cCI6MjExMDExOTQ0Mn0.YDmtab0QnCOzitMYzvJABnhIRFVb9_zlaLtjTG00uE4';
+    const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+    // 2. Inicializar mapa centrado en Ciudad Universitaria UNMSM
+    const coordsIniciales = [-12.0553, -77.0847];
+    const map = L.map('map').setView(coordsIniciales, 16);
+
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        maxZoom: 19,
+        attribution: '&copy; OpenStreetMap contributors'
+    }).addTo(map);
+
+    // Ícono personalizado para el bus
+    const iconoBus = L.divIcon({
+        html: '<div style="font-size: 30px; line-height: 1; filter: drop-shadow(0 2px 3px rgba(0,0,0,0.4));">🚌</div>',
+        iconSize: [32, 32],
+        iconAnchor: [16, 16],
+        className: ''
+    });
+
+    let marker = L.marker(coordsIniciales, { icon: iconoBus }).addTo(map)
+        .bindPopup("<strong>Burrito Spress (Bus-01)</strong><br>En espera de señal...");
+    
+    let estelaRuta = L.polyline([], { color: '#8b0000', weight: 4, opacity: 0.7 }).addTo(map);
+    let ultimaCoordenada = null;
+    let primerCarga = true;
+
+    // 3. Consultar la última ubicación en Supabase cada 3 segundos
+    async function actualizarMapa() {
+        const badge = document.getElementById("estado-conexion");
+        const detalle = document.getElementById("detalle-telemetria");
+
+        try {
+            const { data, error } = await supabaseClient
+                .from('telemetria_buses')
+                .select('*')
+                .eq('unidad', 'Bus-01')
+                .order('created_at', { ascending: false })
+                .limit(1);
+
+            if (error) {
+                badge.innerText = "Error de red";
+                badge.className = "badge offline";
+                return;
+            }
+
+            if (!data || data.length === 0) {
+                badge.innerText = "Sin señal";
+                badge.className = "badge offline";
+                detalle.innerText = "El bus aún no inicia recorrido.";
+                return;
+            }
+
+            const bus = data[0];
+            const nuevaPos = [bus.latitud, bus.longitud];
+            const velocidad = bus.velocidad_kmh || 0;
+            const horaReporte = new Date(bus.created_at).toLocaleTimeString([], { 
+                hour: '2-digit', 
+                minute: '2-digit', 
+                second: '2-digit' 
+            });
+
+            // Verificar si el reporte es reciente (menos de 2 minutos de antigüedad)
+            const diferenciaSegundos = (new Date() - new Date(bus.created_at)) / 1000;
+            if (diferenciaSegundos > 120) {
+                badge.innerText = "Última vez: " + horaReporte;
+                badge.className = "badge offline";
+            } else {
+                badge.innerText = "EN VIVO 🟢";
+                badge.className = "badge";
+            }
+
+            // Actualizar marcador y estela
+            marker.setLatLng(nuevaPos);
+            marker.setPopupContent(`<strong>Bus-01</strong><br>Velocidad: ${velocidad} km/h<br>Actualizado: ${horaReporte}`);
+            
+            if (!ultimaCoordenada || ultimaCoordenada[0] !== nuevaPos[0] || ultimaCoordenada[1] !== nuevaPos[1]) {
+                estelaRuta.addLatLng(nuevaPos);
+                ultimaCoordenada = nuevaPos;
+            }
+
+            if (primerCarga) {
+                map.setView(nuevaPos, 17);
+                primerCarga = false;
+            }
+
+            detalle.innerText = `Velocidad: ${velocidad} km/h • Actualizado: ${horaReporte}`;
+
+        } catch (err) {
+            badge.innerText = "Sin conexión";
+            badge.className = "badge offline";
+        }
+    }
+
+    function centrarEnBus() {
+        if (ultimaCoordenada) {
+            map.setView(ultimaCoordenada, 17);
+            marker.openPopup();
+        } else {
+            map.setView(coordsIniciales, 16);
+        }
+    }
+
+    // Consultar cada 3 segundos
+    setInterval(actualizarMapa, 3000);
+    actualizarMapa();
+</script>
+
+</body>
+</html>
