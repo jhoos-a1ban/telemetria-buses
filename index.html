@@ -65,6 +65,7 @@
         }
         #btn-start { background-color: #2e7d32; }
         #btn-stop { background-color: #c62828; }
+        #btn-test { background-color: #ef6c00; width: 100%; margin-bottom: 10px; }
         #btn-download { background-color: #1565c0; width: 100%; }
         button:active { opacity: 0.8; }
     </style>
@@ -91,14 +92,14 @@
         <button id="btn-start" onclick="iniciarGPS()">▶ Iniciar GPS</button>
         <button id="btn-stop" onclick="detenerGPS()">⏹ Detener</button>
     </div>
-    
+
+    <button id="btn-test" onclick="probarEnvioManual()">⚡ Probar Conexión Supabase</button>
     <button id="btn-download" onclick="descargarCSV()">📥 Descargar Dataset (CSV)</button>
 </div>
 
 <!-- Leaflet JS -->
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
-    // Configuración de Supabase
     const SUPABASE_URL = 'https://rglbhdtbmnhtdvjgsjyy.supabase.co';
     const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJnbGJoZHRibW5odGR2amdzanl5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTQ1NDM0NDIsImV4cCI6MjExMDExOTQ0Mn0.YDmtab0QnCOzitMYzvJABnhIRFVb9_zlaLtjTG00uE4';
     const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
@@ -122,41 +123,61 @@
 
     inicializarMapa();
 
+    async function probarEnvioManual() {
+        document.getElementById("estado").innerText = "Estado: Enviando punto de prueba...";
+        await procesarCoordenada(-12.0553, -77.0847, 15.5);
+    }
+
     function iniciarGPS() {
         if (!navigator.geolocation) {
             alert("Tu navegador no soporta geolocalización.");
             return;
         }
 
-        document.getElementById("estado").innerText = "Estado: Rastreando señal satelital...";
-        
-        let opciones = {
-            enableHighAccuracy: true,
-            timeout: 10000,
-            maximumAge: 0
-        };
+        document.getElementById("estado").innerText = "Estado: Buscando ubicación...";
 
-        watchId = navigator.geolocation.watchPosition(successCallback, errorCallback, opciones);
+        // 1. Lectura inicial rápida (Wi-Fi / Antenas + GPS)
+        navigator.geolocation.getCurrentPosition(
+            (pos) => {
+                procesarCoordenada(
+                    pos.coords.latitude,
+                    pos.coords.longitude,
+                    parseFloat(((pos.coords.speed || 0) * 3.6).toFixed(1))
+                );
+            },
+            (err) => {
+                document.getElementById("estado").innerText = "Estado: Error GPS (" + err.code + ": " + err.message + ")";
+            },
+            { enableHighAccuracy: false, timeout: 15000, maximumAge: 10000 }
+        );
+
+        // 2. Seguimiento continuo en tiempo real
+        watchId = navigator.geolocation.watchPosition(
+            (pos) => {
+                procesarCoordenada(
+                    pos.coords.latitude,
+                    pos.coords.longitude,
+                    parseFloat(((pos.coords.speed || 0) * 3.6).toFixed(1))
+                );
+            },
+            (err) => {
+                document.getElementById("estado").innerText = "Estado: Error GPS (" + err.code + ": " + err.message + ")";
+            },
+            { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 }
+        );
     }
 
-    async function successCallback(position) {
-        let lat = position.coords.latitude;
-        let lng = position.coords.longitude;
-        let velocidadMs = position.coords.speed || 0;
-        let velocidadKmh = parseFloat((velocidadMs * 3.6).toFixed(1));
+    async function procesarCoordenada(lat, lng, velocidadKmh) {
         let timestamp = new Date().toISOString();
 
-        // Actualizar coordenadas en pantalla
         document.getElementById("lat").innerText = "Latitud: " + lat.toFixed(6);
         document.getElementById("lng").innerText = "Longitud: " + lng.toFixed(6);
         document.getElementById("vel").innerText = "Velocidad: " + velocidadKmh + " km/h";
 
-        // Mover marcador en el mapa
         let nuevaPosicion = [lat, lng];
         marker.setLatLng(nuevaPosicion);
         map.setView(nuevaPosicion, 17);
 
-        // Guardar localmente para respaldo en CSV
         dataset.push({
             timestamp: timestamp,
             latitud: lat,
@@ -166,28 +187,23 @@
 
         document.getElementById("puntos").innerText = "Puntos capturados: " + dataset.length;
 
-        // ENVIAR A SUPABASE (sin enviar created_at manualmente)
         try {
             const { error } = await supabaseClient
                 .from('telemetria_buses')
-                .insert([
-                    { 
-                        unidad: 'Bus-01', 
-                        latitud: lat, 
-                        longitud: lng, 
-                        velocidad_kmh: velocidadKmh 
-                    }
-                ]);
+                .insert([{
+                    unidad: 'Bus-01',
+                    latitud: lat,
+                    longitud: lng,
+                    velocidad_kmh: velocidadKmh
+                }]);
 
             if (error) {
-                console.error("Error al guardar en Supabase:", error.message);
-                document.getElementById("estado").innerText = "Estado: Error nube ❌ (" + error.message + ")";
+                document.getElementById("estado").innerText = "Estado: Error Supabase ❌ -> " + error.message;
             } else {
                 document.getElementById("estado").innerText = "Estado: Transmitiendo a Supabase 🟢";
             }
         } catch (err) {
-            console.error("Excepción de red en Supabase:", err);
-            document.getElementById("estado").innerText = "Estado: Sin conexión a internet ❌";
+            document.getElementById("estado").innerText = "Estado: Error de red ❌ -> " + err.message;
         }
     }
 
@@ -206,7 +222,7 @@
         }
 
         let csvContent = "data:text/csv;charset=utf-8,timestamp,latitud,longitud,velocidad_kmh\n";
-        
+
         dataset.forEach(function(row) {
             csvContent += `${row.timestamp},${row.latitud},${row.longitud},${row.velocidad}\n`;
         });
