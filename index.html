@@ -146,8 +146,7 @@
         let velocidadKmh = parseFloat((velocidadMs * 3.6).toFixed(1));
         let timestamp = new Date().toISOString();
 
-        // Actualizar interfaz visual
-        document.getElementById("estado").innerText = "Estado: Transmitiendo a Supabase 🟢";
+        // Actualizar coordenadas en pantalla
         document.getElementById("lat").innerText = "Latitud: " + lat.toFixed(6);
         document.getElementById("lng").innerText = "Longitud: " + lng.toFixed(6);
         document.getElementById("vel").innerText = "Velocidad: " + velocidadKmh + " km/h";
@@ -167,13 +166,12 @@
 
         document.getElementById("puntos").innerText = "Puntos capturados: " + dataset.length;
 
-        // ENVIAR A SUPABASE (Apuntando a la tabla correcta y enviando 'unidad')
+        // ENVIAR A SUPABASE (sin enviar created_at manualmente)
         try {
             const { error } = await supabaseClient
                 .from('telemetria_buses')
                 .insert([
                     { 
-                        created_at: timestamp, 
                         unidad: 'Bus-01', 
                         latitud: lat, 
                         longitud: lng, 
@@ -183,15 +181,14 @@
 
             if (error) {
                 console.error("Error al guardar en Supabase:", error.message);
+                document.getElementById("estado").innerText = "Estado: Error nube ❌ (" + error.message + ")";
+            } else {
+                document.getElementById("estado").innerText = "Estado: Transmitiendo a Supabase 🟢";
             }
         } catch (err) {
             console.error("Excepción de red en Supabase:", err);
+            document.getElementById("estado").innerText = "Estado: Sin conexión a internet ❌";
         }
-    }
-
-    function errorCallback(error) {
-        console.error(error);
-        document.getElementById("estado").innerText = "Estado: Error obteniendo GPS (" + error.message + ")";
     }
 
     function detenerGPS() {
