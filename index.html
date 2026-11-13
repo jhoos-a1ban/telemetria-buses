@@ -98,7 +98,7 @@
 <!-- Leaflet JS -->
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
-    // Configuración de Supabase (Reemplaza con tus credenciales reales)
+    // Configuración de Supabase
     const SUPABASE_URL = 'https://rglbhdtbmnhtdvjgsjyy.supabase.co';
     const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJnbGJoZHRibW5odGR2amdzanl5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTQ1NDM0NDIsImV4cCI6MjExMDExOTQ0Mn0.YDmtab0QnCOzitMYzvJABnhIRFVb9_zlaLtjTG00uE4';
     const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
@@ -107,7 +107,6 @@
     let dataset = [];
     let map, marker;
 
-    // Inicializar mapa centrado en la Ciudad Universitaria UNMSM
     function inicializarMapa() {
         map = L.map('map').setView([-12.0553, -77.0847], 16);
 
@@ -168,12 +167,18 @@
 
         document.getElementById("puntos").innerText = "Puntos capturados: " + dataset.length;
 
-        // ENVIAR A SUPABASE EN TIEMPO REAL
+        // ENVIAR A SUPABASE (Apuntando a la tabla correcta y enviando 'unidad')
         try {
             const { error } = await supabaseClient
                 .from('telemetria_buses')
                 .insert([
-                    { timestamp: timestamp, latitud: lat, longitud: lng, velocidad_kmh: velocidadKmh }
+                    { 
+                        created_at: timestamp, 
+                        unidad: 'Bus-01', 
+                        latitud: lat, 
+                        longitud: lng, 
+                        velocidad_kmh: velocidadKmh 
+                    }
                 ]);
 
             if (error) {
