@@ -105,6 +105,8 @@
     let watchId = null;
     let dataset = [];
     let map, marker;
+    let ultimaLat = null;
+    let ultimaLng = null;
 
     function inicializarMapa() {
         map = L.map('map').setView([-12.0553, -77.0847], 16);
@@ -160,6 +162,8 @@
 
     async function procesarCoordenada(lat, lng, velocidadKmh) {
         let timestamp = new Date().toISOString();
+        ultimaLat = lat;
+        ultimaLng = lng;
 
         document.getElementById("lat").innerText = "Latitud: " + lat.toFixed(6);
         document.getElementById("lng").innerText = "Longitud: " + lng.toFixed(6);
@@ -198,11 +202,27 @@
         }
     }
 
-    function detenerGPS() {
+    async function detenerGPS() {
         if (watchId !== null) {
             navigator.geolocation.clearWatch(watchId);
             watchId = null;
-            document.getElementById("estado").innerText = "Estado: Rastreo detenido ⏹";
+        }
+        document.getElementById("estado").innerText = "Estado: Rastreo detenido ⏹";
+
+        // Enviar señal de cierre en la última ubicación real para quitar el "EN VIVO" del mapa público
+        if (ultimaLat !== null && ultimaLng !== null) {
+            try {
+                await supabaseClient
+                    .from('telemetria_buses')
+                    .insert([{
+                        unidad: 'Bus-01',
+                        latitud: ultimaLat,
+                        longitud: ultimaLng,
+                        velocidad_kmh: -1
+                    }]);
+            } catch (err) {
+                console.error("No se pudo enviar señal de detención:", err);
+            }
         }
     }
 
