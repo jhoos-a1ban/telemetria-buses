@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Burrito Spress - Emisor GPS</title>
+    <!-- Leaflet CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: #f4f4f9;
+            margin: 0;
+            padding: 10px;
+            color: #333;
+        }
+        .container {
+            max-width: 600px;
+            margin: 0 auto;
+            background: #fff;
+            padding: 15px;
+            border-radius: 12px;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.1);
+        }
+        h2 {
+            font-size: 1.2rem;
+            margin-top: 0;
+            color: #8b0000;
+        }
+        #map {
+            height: 320px;
+            width: 100%;
+            border-radius: 8px;
+            margin-bottom: 15px;
+            border: 1px solid #ccc;
+        }
+        .panel {
+            background: #fdfdfd;
+            border: 1px solid #e1e1e1;
+            padding: 12px;
+            border-radius: 8px;
+            margin-bottom: 15px;
+        }
+        .panel p {
+            margin: 6px 0;
+            font-size: 0.95rem;
+            font-weight: 500;
+        }
+        .btn-group {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 10px;
+        }
+        button {
+            flex: 1;
+            padding: 10px;
+            font-size: 0.95rem;
+            font-weight: bold;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            color: white;
+        }
+        #btn-start { background-color: #2e7d32; }
+        #btn-stop { background-color: #c62828; }
+        #btn-download { background-color: #1565c0; width: 100%; }
+        button:active { opacity: 0.8; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h2>🚌 Burrito Spress (Iteración 1)</h2>
+    
+    <!-- Contenedor del Mapa -->
+    <div id="map"></div>
+
+    <!-- Panel de Datos de Telemetría -->
+    <div class="panel">
+        <p id="estado">Estado: Esperando inicio...</p>
+        <p id="lat">Latitud: --</p>
+        <p id="lng">Longitud: --</p>
+        <p id="vel">Velocidad: 0 km/h</p>
+        <p id="puntos">Puntos capturados: 0</p>
+    </div>
+
+    <!-- Botones de Control -->
+    <div class="btn-group">
+        <button id="btn-start" onclick="iniciarGPS()">▶ Iniciar GPS</button>
+        <button id="btn-stop" onclick="detenerGPS()">⏹ Detener</button>
+    </div>
+    
+    <button id="btn-download" onclick="descargarCSV()">📥 Descargar Dataset (CSV)</button>
+</div>
+
+<!-- Leaflet JS -->
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+    let watchId = null;
+    let dataset = [];
+    let map, marker;
+
+    // Inicializar mapa centrado en la Ciudad Universitaria UNMSM
+    function inicializarMapa() {
+        // Coordenadas aproximadas de la UNMSM (Estadio / Ciudad Universitaria)
+        map = L.map('map').setView([-12.0553, -77.0847], 16);
+
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            maxZoom: 19,
+            attribution: '&copy; OpenStreetMap contributors'
+        }).addTo(map);
+
+        marker = L.marker([-12.0553, -77.0847]).addTo(map)
+            .bindPopup("Unidad en prueba")
+            .openPopup();
+    }
+
+    inicializarMapa();
+
+    function iniciarGPS() {
+        if (!navigator.geolocation) {
+            alert("Tu navegador no soporta geolocalización.");
+            return;
+        }
+
+        document.getElementById("estado").innerText = "Estado: Rastreando señal satelital...";
+        
+        let opciones = {
+            enableHighAccuracy: true,
+            timeout: 10000,
+            maximumAge: 0
+        };
+
+        watchId = navigator.geolocation.watchPosition(successCallback, errorCallback, opciones);
+    }
+
+    function successCallback(position) {
+        let lat = position.coords.latitude;
+        let lng = position.coords.longitude;
+        // La velocidad viene en m/s, la multiplicamos por 3.6 para pasarla a km/h (si es null se queda en 0)
+        let velocidadMs = position.coords.speed || 0;
+        let velocidadKmh = (velocidadMs * 3.6).toFixed(1);
+        let timestamp = new Date().toISOString();
+
+        // Actualizar interfaz visual
+        document.getElementById("estado").innerText = "Estado: Transmitiendo en tiempo real 🟢";
+        document.getElementById("lat").innerText = "Latitud: " + lat.toFixed(6);
+        document.getElementById("lng").innerText = "Longitud: " + lng.toFixed(6);
+        document.getElementById("vel").innerText = "Velocidad: " + velocidadKmh + " km/h";
+
+        // Mover marcador en el mapa
+        let nuevaPosicion = [lat, lng];
+        marker.setLatLng(nuevaPosicion);
+        map.setView(nuevaPosicion, 17);
+
+        // Guardar en el arreglo para el CSV
+        dataset.push({
+            timestamp: timestamp,
+            latitud: lat,
+            longitud: lng,
+            velocidad: velocidadKmh
+        });
+
+        document.getElementById("puntos").innerText = "Puntos capturados: " + dataset.length;
+    }
+
+    function errorCallback(error) {
+        console.error(error);
+        document.getElementById("estado").innerText = "Estado: Error obteniendo GPS (" + error.message + ")";
+    }
+
+    function detenerGPS() {
+        if (watchId !== null) {
+            navigator.geolocation.clearWatch(watchId);
+            watchId = null;
+            document.getElementById("estado").innerText = "Estado: Rastreo detenido ⏹";
+        }
+    }
+
+    function descargarCSV() {
+        if (dataset.length === 0) {
+            alert("No hay datos capturados todavía.");
+            return;
+        }
+
+        let csvContent = "data:text/csv;charset=utf-8,timestamp,latitud,longitud,velocidad_kmh\n";
+        
+        dataset.forEach(function(row) {
+            csvContent += `${row.timestamp},${row.latitud},${row.longitud},${row.velocidad}\n`;
+        });
+
+        let encodedUri = encodeURI(csvContent);
+        let link = document.createElement("a");
+        link.setAttribute("href", encodedUri);
+        link.setAttribute("download", "dataset_burrito_unmsm.csv");
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    }
+</script>
+
+</body>
+</html>
