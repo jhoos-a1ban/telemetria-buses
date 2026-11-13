@@ -171,7 +171,7 @@
         // ENVIAR A SUPABASE EN TIEMPO REAL
         try {
             const { error } = await supabaseClient
-                .from('gps_logs')
+                .from('telemetria_buses')
                 .insert([
                     { timestamp: timestamp, latitud: lat, longitud: lng, velocidad_kmh: velocidadKmh }
                 ]);
