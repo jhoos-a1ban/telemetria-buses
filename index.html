@@ -91,7 +91,7 @@
         <button id="btn-start" onclick="iniciarGPS()">▶ Iniciar GPS</button>
         <button id="btn-stop" onclick="detenerGPS()">⏹ Detener</button>
     </div>
-
+    
     <button id="btn-download" onclick="descargarCSV()">📥 Descargar Dataset (CSV)</button>
 </div>
 
@@ -129,7 +129,6 @@
 
         document.getElementById("estado").innerText = "Estado: Buscando ubicación...";
 
-        // 1. Primera captura rápida (antenas + GPS)
         navigator.geolocation.getCurrentPosition(
             (pos) => {
                 procesarCoordenada(
@@ -144,7 +143,6 @@
             { enableHighAccuracy: false, timeout: 15000, maximumAge: 10000 }
         );
 
-        // 2. Seguimiento continuo en tiempo real
         watchId = navigator.geolocation.watchPosition(
             (pos) => {
                 procesarCoordenada(
@@ -215,7 +213,7 @@
         }
 
         let csvContent = "data:text/csv;charset=utf-8,timestamp,latitud,longitud,velocidad_kmh\n";
-
+        
         dataset.forEach(function(row) {
             csvContent += `${row.timestamp},${row.latitud},${row.longitud},${row.velocidad}\n`;
         });
