@@ -6,6 +6,8 @@
     <title>Burrito Spress - Emisor GPS</title>
     <!-- Leaflet CSS -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <!-- Supabase JS Client -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <style>
         body {
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
@@ -96,13 +98,17 @@
 <!-- Leaflet JS -->
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
+    // Configuración de Supabase (Reemplaza con tus credenciales reales)
+    const SUPABASE_URL = 'https://rglbhdtbmnhtdvjgsjyy.supabase.co';
+    const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJnbGJoZHRibW5odGR2amdzanl5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTQ1NDM0NDIsImV4cCI6MjExMDExOTQ0Mn0.YDmtab0QnCOzitMYzvJABnhIRFVb9_zlaLtjTG00uE4';
+    const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
     let watchId = null;
     let dataset = [];
     let map, marker;
 
     // Inicializar mapa centrado en la Ciudad Universitaria UNMSM
     function inicializarMapa() {
-        // Coordenadas aproximadas de la UNMSM (Estadio / Ciudad Universitaria)
         map = L.map('map').setView([-12.0553, -77.0847], 16);
 
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
@@ -134,16 +140,15 @@
         watchId = navigator.geolocation.watchPosition(successCallback, errorCallback, opciones);
     }
 
-    function successCallback(position) {
+    async function successCallback(position) {
         let lat = position.coords.latitude;
         let lng = position.coords.longitude;
-        // La velocidad viene en m/s, la multiplicamos por 3.6 para pasarla a km/h (si es null se queda en 0)
         let velocidadMs = position.coords.speed || 0;
-        let velocidadKmh = (velocidadMs * 3.6).toFixed(1);
+        let velocidadKmh = parseFloat((velocidadMs * 3.6).toFixed(1));
         let timestamp = new Date().toISOString();
 
         // Actualizar interfaz visual
-        document.getElementById("estado").innerText = "Estado: Transmitiendo en tiempo real 🟢";
+        document.getElementById("estado").innerText = "Estado: Transmitiendo a Supabase 🟢";
         document.getElementById("lat").innerText = "Latitud: " + lat.toFixed(6);
         document.getElementById("lng").innerText = "Longitud: " + lng.toFixed(6);
         document.getElementById("vel").innerText = "Velocidad: " + velocidadKmh + " km/h";
@@ -153,7 +158,7 @@
         marker.setLatLng(nuevaPosicion);
         map.setView(nuevaPosicion, 17);
 
-        // Guardar en el arreglo para el CSV
+        // Guardar localmente para respaldo en CSV
         dataset.push({
             timestamp: timestamp,
             latitud: lat,
@@ -162,6 +167,21 @@
         });
 
         document.getElementById("puntos").innerText = "Puntos capturados: " + dataset.length;
+
+        // ENVIAR A SUPABASE EN TIEMPO REAL
+        try {
+            const { error } = await supabaseClient
+                .from('gps_logs')
+                .insert([
+                    { timestamp: timestamp, latitud: lat, longitud: lng, velocidad_kmh: velocidadKmh }
+                ]);
+
+            if (error) {
+                console.error("Error al guardar en Supabase:", error.message);
+            }
+        } catch (err) {
+            console.error("Excepción de red en Supabase:", err);
+        }
     }
 
     function errorCallback(error) {
