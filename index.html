@@ -115,7 +115,7 @@
     let estelaRuta = L.polyline([], { color: '#8b0000', weight: 4, opacity: 0.7 }).addTo(map);
     let ultimaCoordenada = null;
     let primerCarga = true;
-    let busActivo = false;
+    let busVisible = false;
 
     async function actualizarMapa() {
         const badge = document.getElementById("estado-conexion");
@@ -156,33 +156,44 @@
 
             const diferenciaSegundos = (new Date() - new Date(bus.created_at)) / 1000;
 
-            // Se oculta al presionar Detener o tras 10 minutos (600 segundos) sin señal
-            if (detenidoManualmente || diferenciaSegundos > 600) {
+            // 1. Si pasaron más de 5 minutos (300 s) desde el último reporte (detenido o sin señal):
+            // Se muestra la última vez y se oculta el carrito del mapa
+            if (diferenciaSegundos > 300) {
                 ocultarBus();
                 badge.innerText = "Última vez: " + horaReporte;
                 badge.className = "badge offline";
                 detalle.innerText = `Unidad fuera de servicio • Última vez: ${horaReporte}`;
-            } else {
-                busActivo = true;
-                if (!map.hasLayer(marker)) {
-                    marker.addTo(map);
-                }
+                return;
+            }
 
+            // 2. Si aún no pasan los 5 minutos, el carrito permanece visible en el mapa
+            busVisible = true;
+            if (!map.hasLayer(marker)) {
+                marker.addTo(map);
+            }
+            marker.setLatLng(nuevaPos);
+
+            if (!ultimaCoordenada || ultimaCoordenada[0] !== nuevaPos[0] || ultimaCoordenada[1] !== nuevaPos[1]) {
+                estelaRuta.addLatLng(nuevaPos);
+                ultimaCoordenada = nuevaPos;
+            }
+
+            if (primerCarga) {
+                map.setView(nuevaPos, 17);
+                primerCarga = false;
+            }
+
+            // 3. Distinguir si está detenido (menos de 5 min) o transmitiendo EN VIVO
+            if (detenidoManualmente) {
+                badge.innerText = "Última vez: " + horaReporte;
+                badge.className = "badge offline";
+                marker.setPopupContent(`<strong>Bus-01 (Detenido)</strong><br>Última vez: ${horaReporte}`);
+                detalle.innerText = `Unidad detenida • Última vez: ${horaReporte}`;
+            } else {
                 badge.innerText = "EN VIVO 🟢";
                 badge.className = "badge";
-                marker.setLatLng(nuevaPos);
                 marker.setPopupContent(`<strong>Bus-01</strong><br>Velocidad: ${velocidad} km/h<br>Actualizado: ${horaReporte}`);
                 detalle.innerText = `Velocidad: ${velocidad} km/h • Actualizado: ${horaReporte}`;
-
-                if (!ultimaCoordenada || ultimaCoordenada[0] !== nuevaPos[0] || ultimaCoordenada[1] !== nuevaPos[1]) {
-                    estelaRuta.addLatLng(nuevaPos);
-                    ultimaCoordenada = nuevaPos;
-                }
-
-                if (primerCarga) {
-                    map.setView(nuevaPos, 17);
-                    primerCarga = false;
-                }
             }
 
         } catch (err) {
@@ -192,7 +203,7 @@
     }
 
     function ocultarBus() {
-        busActivo = false;
+        busVisible = false;
         ultimaCoordenada = null;
         primerCarga = true;
         if (map.hasLayer(marker)) {
@@ -202,7 +213,7 @@
     }
 
     function centrarEnBus() {
-        if (busActivo && ultimaCoordenada) {
+        if (busVisible && ultimaCoordenada) {
             map.setView(ultimaCoordenada, 17);
             marker.openPopup();
         } else {
