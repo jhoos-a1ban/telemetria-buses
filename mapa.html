@@ -19,7 +19,7 @@
             height: 100vh;
         }
         header {
-            background-color: #8b0000; /* Rojo San Marcos */
+            background-color: #8b0000;
             color: white;
             padding: 12px 16px;
             display: flex;
@@ -91,12 +91,10 @@
 <!-- Leaflet JS -->
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
-    // 1. Conexión a tu proyecto activo de Supabase
     const SUPABASE_URL = 'https://rglbhdtbmnhtdvjgsjyy.supabase.co';
     const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJnbGJoZHRibW5odGR2amdzanl5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTQ1NDM0NDIsImV4cCI6MjExMDExOTQ0Mn0.YDmtab0QnCOzitMYzvJABnhIRFVb9_zlaLtjTG00uE4';
     const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-    // 2. Inicializar mapa centrado en Ciudad Universitaria UNMSM
     const coordsIniciales = [-12.0553, -77.0847];
     const map = L.map('map').setView(coordsIniciales, 16);
 
@@ -105,7 +103,6 @@
         attribution: '&copy; OpenStreetMap contributors'
     }).addTo(map);
 
-    // Ícono personalizado para el bus
     const iconoBus = L.divIcon({
         html: '<div style="font-size: 30px; line-height: 1; filter: drop-shadow(0 2px 3px rgba(0,0,0,0.4));">🚌</div>',
         iconSize: [32, 32],
@@ -120,7 +117,6 @@
     let ultimaCoordenada = null;
     let primerCarga = true;
 
-    // 3. Consultar la última ubicación en Supabase cada 3 segundos
     async function actualizarMapa() {
         const badge = document.getElementById("estado-conexion");
         const detalle = document.getElementById("detalle-telemetria");
@@ -148,26 +144,30 @@
 
             const bus = data[0];
             const nuevaPos = [bus.latitud, bus.longitud];
-            const velocidad = bus.velocidad_kmh || 0;
+            const detenidoManualmente = bus.velocidad_kmh < 0;
+            const velocidad = detenidoManualmente ? 0 : (bus.velocidad_kmh || 0);
+            
             const horaReporte = new Date(bus.created_at).toLocaleTimeString([], { 
                 hour: '2-digit', 
                 minute: '2-digit', 
                 second: '2-digit' 
             });
 
-            // Verificar si el reporte es reciente (menos de 2 minutos de antigüedad)
             const diferenciaSegundos = (new Date() - new Date(bus.created_at)) / 1000;
-            if (diferenciaSegundos > 120) {
-                badge.innerText = "Última vez: " + horaReporte;
+
+            if (detenidoManualmente || diferenciaSegundos > 120) {
+                badge.innerText = "Última transmisión: " + horaReporte;
                 badge.className = "badge offline";
+                marker.setPopupContent(`<strong>Bus-01 (Detenido)</strong><br>Última transmisión: ${horaReporte}`);
+                detalle.innerText = `Recorrido finalizado • Última vez: ${horaReporte}`;
             } else {
                 badge.innerText = "EN VIVO 🟢";
                 badge.className = "badge";
+                marker.setPopupContent(`<strong>Bus-01</strong><br>Velocidad: ${velocidad} km/h<br>Actualizado: ${horaReporte}`);
+                detalle.innerText = `Velocidad: ${velocidad} km/h • Actualizado: ${horaReporte}`;
             }
 
-            // Actualizar marcador y estela
             marker.setLatLng(nuevaPos);
-            marker.setPopupContent(`<strong>Bus-01</strong><br>Velocidad: ${velocidad} km/h<br>Actualizado: ${horaReporte}`);
             
             if (!ultimaCoordenada || ultimaCoordenada[0] !== nuevaPos[0] || ultimaCoordenada[1] !== nuevaPos[1]) {
                 estelaRuta.addLatLng(nuevaPos);
@@ -178,8 +178,6 @@
                 map.setView(nuevaPos, 17);
                 primerCarga = false;
             }
-
-            detalle.innerText = `Velocidad: ${velocidad} km/h • Actualizado: ${horaReporte}`;
 
         } catch (err) {
             badge.innerText = "Sin conexión";
@@ -196,7 +194,6 @@
         }
     }
 
-    // Consultar cada 3 segundos
     setInterval(actualizarMapa, 3000);
     actualizarMapa();
 </script>
